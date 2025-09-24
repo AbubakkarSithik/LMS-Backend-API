@@ -1,6 +1,7 @@
 {
   "name": "lms-backend-api",
   "version": "1.0.0",
+  "type": "module",
   "description": "A Leave Management System backend RESTAPI, made using Express JS",
   "main": "index.js",
   "scripts": {
