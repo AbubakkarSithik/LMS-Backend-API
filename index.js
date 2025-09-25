@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import onboardRoutes from "./routes/onboard.js";
 
@@ -11,6 +12,7 @@ app.use(
     credentials: true,
   })
 );
+app.use(cookieParser());
 
 app.use("/auth", authRoutes);
 app.use("/onboard", onboardRoutes);
