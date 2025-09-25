@@ -1,15 +1,12 @@
 import express from "express";
-import dotenv from "dotenv";
-dotenv.config();
 import authRoutes from "./routes/auth.js";
-import appUserRoutes from "./routes/appUser.js";
-
+import onboardRoutes from "./routes/onboard.js";
 
 const app = express();
 app.use(express.json());
 
 app.use("/auth", authRoutes);
-app.use("/users", appUserRoutes);
+app.use("/onboard", onboardRoutes);
 
 // Health check
 app.get("/", (req, res) => {

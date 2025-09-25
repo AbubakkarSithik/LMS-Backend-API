@@ -1,12 +1,7 @@
 import express from "express";
-import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
-dotenv.config();
+import supabase from "../config/supabase.js";
 
 const router = express.Router();
-
-// create supabase client per route (or pass it from index.js)
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // Signup
 router.post("/signup", async (req, res) => {
