@@ -4,7 +4,7 @@ import supabase from "../config/supabase.js";
 export const onboardUser = async (req, res) => {
   try {
     const { org_name, subdomain, first_name, last_name, username } = req.body;
-    const userId = req.user.id;   // ✅ from decoded JWT
+    const userId = req.user.id;   
     const userEmail = req.user.email;
 
     // 1) Check if user already has an app_user
