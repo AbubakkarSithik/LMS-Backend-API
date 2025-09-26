@@ -4,24 +4,25 @@ dotenv.config();
 
 export function verifyAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
+    const token =
+      req.cookies?.sb_access_token || 
+      (req.headers.authorization?.split(" ")[1] ?? null); 
 
-    if (!authHeader) {
-      return res.status(401).json({ error: "Authorization header missing" });
-    }
-
-    const token = authHeader.split(" ")[1];
     if (!token) {
-      return res.status(401).json({ error: "Token missing" });
+      return res.status(401).json({ error: "Missing access token" });
     }
-
     const decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET, {
       algorithms: ["HS256"],
     });
-    
-    req.user = decoded;
+    req.user = {
+      id: decoded.sub,       
+      email: decoded.email,  
+      role: decoded.role,    
+      ...decoded,            
+    };
     next();
   } catch (err) {
+    console.error("Auth error:", err.message);
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
