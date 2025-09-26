@@ -1,5 +1,8 @@
 import express from "express";
 import supabase from "../config/supabase.js";
+import dotenv from "dotenv";
+import { getURL } from "../middleware/verifyAdmin.js";
+dotenv.config();
 
 const router = express.Router();
 
@@ -28,10 +31,7 @@ router.post("/signup", async (req, res) => {
     email,
     password,
     options: {
-      emailRedirectTo:
-        process.env.NODE_ENV === "development"
-          ? "http://localhost:5173/onboard-redirect"
-          : `${process.env.FRONTEND_URL}/onboard-redirect`,
+      emailRedirectTo: `${getURL()}/onboard-redirect`,
     },
   });
 

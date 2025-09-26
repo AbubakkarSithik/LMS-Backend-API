@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import onboardRoutes from "./routes/onboard.js";
+import inviteRoutes from "./routes/inviteUser.js"
 
 const app = express();
 app.use(express.json());
@@ -16,6 +17,7 @@ app.use(cookieParser());
 
 app.use("/auth", authRoutes);
 app.use("/onboard", onboardRoutes);
+app.use("/invite", inviteRoutes);
 
 // Health check
 app.get("/", (req, res) => {
