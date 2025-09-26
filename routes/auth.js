@@ -31,7 +31,7 @@ router.post("/signup", async (req, res) => {
     email,
     password,
     options: {
-      emailRedirectTo: `${getURL()}/onboard-redirect`,
+      emailRedirectTo: `${getURL()}onboard-redirect`,
     },
   });
 
