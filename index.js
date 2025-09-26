@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import onboardRoutes from "./routes/onboard.js";
 import inviteRoutes from "./routes/inviteUser.js"
+import appUsersRoutes from "./routes/appUsers.js"
 
 const app = express();
 app.use(express.json());
@@ -18,6 +19,7 @@ app.use(cookieParser());
 app.use("/auth", authRoutes);
 app.use("/onboard", onboardRoutes);
 app.use("/invite", inviteRoutes);
+app.use("/users", appUsersRoutes);
 
 // Health check
 app.get("/", (req, res) => {
