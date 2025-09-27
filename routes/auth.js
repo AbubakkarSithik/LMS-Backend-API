@@ -60,6 +60,20 @@ router.post("/login", async (req, res) => {
   res.json({ user: data.user });
 });
 
+router.post("/set-session", async (req, res) => {
+  const { access_token, refresh_token } = req.body;
+  if (!access_token || !refresh_token) {
+    return res.status(400).json({ error: "Missing tokens" });
+  }
+
+  // Validate access token
+  const { data, error } = await supabase.auth.getUser(access_token);
+  if (error) return res.status(401).json({ error: error.message });
+
+  setAuthCookies(res, { access_token, refresh_token });
+  res.json({ user: data.user ,session: data.session });
+});
+
 // Restore session from refresh token
 router.get("/restore", async (req, res) => {
   const refreshToken = req.cookies.sb_refresh_token;
@@ -71,7 +85,7 @@ router.get("/restore", async (req, res) => {
   }
 
   setAuthCookies(res, data.session);
-  res.json({ user: data.user });
+  res.json({ session: data.session, user: data.user });
 });
 
 // Logout
