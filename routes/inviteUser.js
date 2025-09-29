@@ -59,9 +59,9 @@ router.post("/invite-user", verifyAuth, async (req, res) => {
     const inviteData = {
       organization_id,
       role_id,
-      username,
-      first_name,
-      last_name,
+      username : null,
+      first_name : null,
+      last_name: null,
       pending_invite_id: pending.invite_id, 
     };
 
