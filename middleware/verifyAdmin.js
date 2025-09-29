@@ -14,7 +14,6 @@ export async function verifyAdminForOrg(userId, organizationId) {
   }
   if (!data) return false;
 
-  // fetch role name
   const { data: roleRow } = await supabase
     .from("role")
     .select("role_name")

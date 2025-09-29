@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.js";
 import onboardRoutes from "./routes/onboard.js";
 import inviteRoutes from "./routes/inviteUser.js"
 import appUsersRoutes from "./routes/appUsers.js"
+import orgRoutes from "./routes/orgRoutes.js";
 
 const app = express();
 app.use(express.json());
@@ -20,6 +21,7 @@ app.use("/auth", authRoutes);
 app.use("/onboard", onboardRoutes);
 app.use("/invite", inviteRoutes);
 app.use("/users", appUsersRoutes);
+app.use("/organization", orgRoutes);
 
 // Health check
 app.get("/", (req, res) => {
