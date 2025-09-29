@@ -24,17 +24,3 @@ export async function verifyAdminForOrg(userId, organizationId) {
   if (!roleRow) return false;
   return roleRow.role_name === "Admin";
 }
-
-export const getURL = () => {
-  let url =
-    process?.env?.NEXT_PUBLIC_SITE_URL ??       // Your custom domain in production
-    process?.env?.NEXT_PUBLIC_VERCEL_URL ??     // Automatically set by Vercel
-    "http://localhost:5173/";                   // Fallback for local dev
-
-  // Ensure it starts with http(s)
-  url = url.startsWith("http") ? url : `https://${url}`;
-  // Ensure trailing slash
-  url = url.endsWith("/") ? url : `${url}/`;
-
-  return url;
-};

@@ -1,37 +1,35 @@
 import express from "express";
 import supabase from "../config/supabase.js";
 import dotenv from "dotenv";
-import { getURL } from "../middleware/verifyAdmin.js";
 dotenv.config();
 
 const router = express.Router();
 
-// Helper: set session cookies
 function setAuthCookies(res, session) {
   res.cookie("sb_access_token", session.access_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "Strict",
-    maxAge: 1000 * 60 * 60 * 24, // 1 day
+    maxAge: 1000 * 60 * 60 * 24, 
   });
 
   res.cookie("sb_refresh_token", session.refresh_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "Strict",
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    maxAge: 1000 * 60 * 60 * 24 * 7, 
   });
 }
 
 // Signup
 router.post("/signup", async (req, res) => {
-  const { email, password } = req.body;
-
+  const { email, password , redirectTo } = req.body;
+  console.log("signup redirect: ",redirectTo);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${getURL()}onboard-redirect`,
+      emailRedirectTo: redirectTo,
     },
   });
 
@@ -85,7 +83,7 @@ router.post("/set-session", async (req, res) => {
   res.json({ user: userData.user, session });
 });
 
-
+//set password for user 
 router.post("/set-password", async (req, res) => {
   const {  new_password } = req.body;
   const sb_access_token = req.cookies.sb_access_token;

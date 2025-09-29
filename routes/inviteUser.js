@@ -1,6 +1,6 @@
 import express from "express";
 import supabase from "../config/supabase.js";
-import { verifyAdminForOrg , getURL} from "../middleware/verifyAdmin.js";
+import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import dotenv from "dotenv";
 dotenv.config();
@@ -25,10 +25,10 @@ router.get("/roles", verifyAuth, async (req, res) => {
  */
 router.post("/invite-user", verifyAuth, async (req, res) => {
   const inviterId = req.user?.id;
-  const { email, role_id, organization_id, first_name, last_name, username } = req.body;
+  const { email, role_id, organization_id, redirectTo  } = req.body;
 
-  if (!email || !role_id || !organization_id) {
-    return res.status(400).json({ error: "email, role_id and organization_id required" });
+  if (!email || !role_id || !organization_id || !redirectTo) {
+    return res.status(400).json({ error: "Insufficient Data!" });
   }
 
   try {
@@ -43,9 +43,9 @@ router.post("/invite-user", verifyAuth, async (req, res) => {
         email,
         organization_id,
         role_id,
-        username: username ?? null,
-        first_name: first_name ?? null,
-        last_name: last_name ?? null,
+        username: null,
+        first_name: null,
+        last_name: null,
         invited_by: inviterId
       }])
       .select()
@@ -53,39 +53,29 @@ router.post("/invite-user", verifyAuth, async (req, res) => {
 
     if (pendingErr) {
       console.error("pending_invite insert error", pendingErr);
-      // continue anyway — not fatal, but better to fail early
       return res.status(500).json({ error: pendingErr.message });
     }
-
-    // 3) Call Supabase admin invite API to send email invite
-    // we pass user_metadata so we can recreate app_user on acceptance
-    const inviteOptions = {
-        redirectTo: `${getURL()}onboard-redirect`, 
-    };
-
-    console.log("inviteOptions", inviteOptions);
-
+   
     const inviteData = {
       organization_id,
       role_id,
       username,
       first_name,
       last_name,
-      pending_invite_id: pending.invite_id, // map back later
+      pending_invite_id: pending.invite_id, 
     };
 
-    // NOTE: the admin invite function is available in supabase-js admin API
+    console.log("redirect url", redirectTo);
     const { data: inviteRes, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
       email,
       {
-        redirectTo: inviteOptions.redirectTo,
-        data: inviteData, // stored under user_metadata
+        redirectTo: redirectTo,
+        data: inviteData, 
       }
     );
 
     if (inviteError) {
       console.error("inviteUserByEmail error:", inviteError);
-      // mark pending_invite with failure
       await supabase
         .from("pending_invite")
         .update({ invite_result: { error: inviteError } })
