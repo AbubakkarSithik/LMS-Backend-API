@@ -1,6 +1,7 @@
 import express from "express";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import supabase from "../config/supabase.js"; 
+import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
@@ -39,14 +40,13 @@ router.put("/me", verifyAuth, async (req, res) => {
 });
 
 /**
- * ADMIN ONLY: GET /app_user/:id
+ * ADMIN ONLY: GET /app_user/:id wrong code had to check
  */
 router.get("/:id", verifyAuth, async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
+  const userId = req.user?.id;
   const { id } = req.params;
+  const isAdmin = await verifyAdminForOrg(userId, id);
+  if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
 
   const { data, error } = await supabase
     .from("app_user")
@@ -57,6 +57,35 @@ router.get("/:id", verifyAuth, async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
+
+/**
+ * ADMIN ONLY: GET /app_user/by-org/:organization_id
+ * Returns all app_users belonging to an organization
+ */
+router.get("/org/:organization_id", verifyAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { organization_id } = req.params;
+    const isAdmin = await verifyAdminForOrg(userId, organization_id);
+    console.log("verifyAdminForOrg:", isAdmin);
+    if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
+    const { data, error } = await supabase
+      .from("app_user")
+      .select("*")
+      .eq("organization_id", Number(organization_id))
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.log("users by org:", data);
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching users by org:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 /**
  * ADMIN ONLY: PUT /app_user/:id
