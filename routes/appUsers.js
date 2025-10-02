@@ -40,14 +40,10 @@ router.put("/me", verifyAuth, async (req, res) => {
 });
 
 /**
- * ADMIN ONLY: GET /app_user/:id wrong code had to check
+GET /app_user/:id 
  */
 router.get("/:id", verifyAuth, async (req, res) => {
-  const userId = req.user?.id;
   const { id } = req.params;
-  const isAdmin = await verifyAdminForOrg(userId, id);
-  if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
-
   const { data, error } = await supabase
     .from("app_user")
     .select("*")
@@ -91,12 +87,12 @@ router.get("/org/:organization_id", verifyAuth, async (req, res) => {
  * ADMIN ONLY: PUT /app_user/:id
  */
 router.put("/:id", verifyAuth, async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
 
   const { id } = req.params;
   const { role_id, organization_id, username, first_name, last_name } = req.body;
+  const isAdmin = await verifyAdminForOrg(id, organization_id);
+  console.log("verifyAdminForOrg:", isAdmin);
+  if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
 
   const { data, error } = await supabase
     .from("app_user")
@@ -113,12 +109,7 @@ router.put("/:id", verifyAuth, async (req, res) => {
  * ADMIN ONLY: DELETE /app_user/:id
  */
 router.delete("/:id", verifyAuth, async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
   const { id } = req.params;
-
   const { error } = await supabase.from("app_user").delete().eq("id", id);
 
   if (error) return res.status(400).json({ error: error.message });
