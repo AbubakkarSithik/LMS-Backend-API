@@ -5,7 +5,7 @@ import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
-// GET /api/leave-balances -> employees see their balances, admins see all in org
+// GET /api/leave-balances
 router.get("/leave-balances", verifyAuth, async (req, res) => {
   try {
     const userId = req.user?.id;

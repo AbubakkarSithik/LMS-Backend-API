@@ -7,7 +7,6 @@ export const onboardUser = async (req, res) => {
     const userId = req.user.id;   
     const userEmail = req.user.email;
 
-    // 1) Check if user already has an app_user
     const { data: existingUser } = await supabase
       .from("app_user")
       .select("*")
@@ -18,7 +17,6 @@ export const onboardUser = async (req, res) => {
       return res.status(400).json({ error: "User already onboarded" });
     }
 
-    // 2) Create organization
     const { data: org, error: orgError } = await supabase
       .from("organization")
       .insert([{ name: org_name, subdomain }])
@@ -29,7 +27,6 @@ export const onboardUser = async (req, res) => {
       return res.status(400).json({ error: orgError.message });
     }
 
-    // 3) Get Admin role_id
     const { data: roleData, error: roleError } = await supabase
       .from("role")
       .select("role_id")
@@ -40,7 +37,6 @@ export const onboardUser = async (req, res) => {
       return res.status(400).json({ error: roleError.message });
     }
 
-    // 4) Create app_user as Admin
     const { data: appUser, error: appUserError } = await supabase
       .from("app_user")
       .insert([{
