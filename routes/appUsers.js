@@ -86,9 +86,9 @@ router.get("/org/:organization_id", verifyAuth, async (req, res) => {
 /**
  * ADMIN ONLY: PUT /app_user/:id
  */
-router.put("/:id", verifyAuth, async (req, res) => {
-
-  const { id } = req.params;
+router.put("/:userId", verifyAuth, async (req, res) => {
+  const { id } = req.user;
+  const { userId } = req.params;
   const { role_id, organization_id, username, first_name, last_name } = req.body;
   const isAdmin = await verifyAdminForOrg(id, organization_id);
   console.log("verifyAdminForOrg:", isAdmin);
@@ -96,8 +96,8 @@ router.put("/:id", verifyAuth, async (req, res) => {
 
   const { data, error } = await supabase
     .from("app_user")
-    .update({ role_id, organization_id, username, first_name, last_name })
-    .eq("id", id)
+    .update({ role_id, username, first_name, last_name })
+    .eq("id", userId)
     .select()
     .single();
 
