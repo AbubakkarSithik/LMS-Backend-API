@@ -1,7 +1,7 @@
 import express from "express";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import supabase from "../config/supabase.js"; 
-import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
+import { verifyAdminForOrg, verifyHRForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
@@ -55,7 +55,7 @@ router.get("/:id", verifyAuth, async (req, res) => {
 });
 
 /**
- * ADMIN ONLY: GET /app_user/by-org/:organization_id
+ * ADMIN and HR : GET /app_user/by-org/:organization_id
  * Returns all app_users belonging to an organization
  */
 router.get("/org/:organization_id", verifyAuth, async (req, res) => {
@@ -63,8 +63,10 @@ router.get("/org/:organization_id", verifyAuth, async (req, res) => {
     const userId = req.user?.id;
     const { organization_id } = req.params;
     const isAdmin = await verifyAdminForOrg(userId, organization_id);
+    const isHR = await verifyHRForOrg(userId, organization_id);
     console.log("verifyAdminForOrg:", isAdmin);
-    if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
+    console.log("verifyHRForOrg:", isHR);
+    if (!isAdmin && !isHR) return res.status(403).json({ error: "Forbidden" });
     const { data, error } = await supabase
       .from("app_user")
       .select("*")
@@ -91,12 +93,15 @@ router.put("/:userId", verifyAuth, async (req, res) => {
   const { userId } = req.params;
   const { role_id, organization_id, username, first_name, last_name } = req.body;
   const isAdmin = await verifyAdminForOrg(id, organization_id);
+  const isHR = await verifyHRForOrg(id, organization_id);
   console.log("verifyAdminForOrg:", isAdmin);
-  if (!isAdmin) return res.status(403).json({ error: "Forbidden" });
-
+  console.log("verifyHRForOrg:", isHR);
+  if (!isAdmin && !isHR) return res.status(403).json({ error: "Forbidden" });
+  const payload = { username, first_name, last_name };
+  if (isAdmin && role_id) {payload.role_id = role_id};
   const { data, error } = await supabase
     .from("app_user")
-    .update({ role_id, username, first_name, last_name })
+    .update(payload)
     .eq("id", userId)
     .select()
     .single();
