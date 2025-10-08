@@ -8,6 +8,7 @@ import appUsersRoutes from "./routes/appUsers.js"
 import orgRoutes from "./routes/orgRoutes.js";
 import leaveRoutes from "./routes/leave.js"
 import employeeRelationsRoutes from "./routes/employeeRelations.js";
+import leaveRequestRoutes from "./routes/leaveRequest.js"
 
 const app = express();
 app.use(express.json());
@@ -26,6 +27,7 @@ app.use("/users", appUsersRoutes);
 app.use("/organization", orgRoutes);
 app.use("/leave", leaveRoutes);
 app.use("/employee", employeeRelationsRoutes);
+app.use("/request-leave", leaveRequestRoutes);
 
 // Health check
 app.get("/", (req, res) => {
