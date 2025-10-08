@@ -98,30 +98,48 @@ router.delete("/manager-hr/:manager_id", verifyAuth, async (req, res) => {
   res.status(204).send();
 });
 
-// --- READ ENDPOINT (Accessible to all authenticated users for context) ---
+// --- GET ALL RELATIONS IN AN ORGANIZATION ---
+router.get("/relations/all", verifyAuth, async (req, res) => {
+  try {
+    const { data: users, error: userError } = await supabase
+      .from("app_user")
+      .select("id, first_name, last_name, organization_id");
 
-router.get("/relations/:table/:id", verifyAuth, async (req, res) => {
-  const { table, id } = req.params;
-  let keyField;
+    if (userError) {
+      console.error("Error fetching users:", userError.message);
+      return res.status(500).json({ error: "Failed to fetch users" });
+    }
 
-  switch (table) {
-    case 'employee-manager': keyField = 'employee_id'; break;
-    case 'hr-admin': keyField = 'hr_id'; break;
-    case 'manager-hr': keyField = 'manager_id'; break;
-    default: return res.status(400).json({ error: "Invalid table name." });
+    if (!users?.length) {
+      return res.status(200).json({
+        relations: {
+          "employee-manager": [],
+          "manager-hr": [],
+        },
+      });
+    }
+
+    const [{ data: empMgrData, error: empMgrError }, { data: mgrHrData, error: mgrHrError }] =
+      await Promise.all([
+        supabase.from("employee_manager").select("*"),
+        supabase.from("manager_hr").select("*"),
+      ]);
+
+    if (empMgrError || mgrHrError) {
+      console.error("Error fetching relations:", empMgrError || mgrHrError);
+      return res.status(500).json({ error: "Failed to fetch relations" });
+    }
+
+    const relations = {
+      "employee-manager": empMgrData || [],
+      "manager-hr": mgrHrData || [],
+    };
+
+    res.status(200).json({ relations });
+  } catch (err) {
+    console.error("Unexpected error fetching all relations:", err);
+    res.status(500).json({ error: "Unexpected server error" });
   }
-
-  const { data, error } = await supabase
-    .from(table.replace('-', '_'))
-    .select("*")
-    .eq(keyField, id)
-    .single();
-    
-  if (error && error.code !== 'PGRST116') { 
-    return res.status(500).json({ error: error.message });
-  }
-
-  res.status(200).json(data || {});
 });
 
 export default router;
