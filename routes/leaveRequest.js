@@ -136,4 +136,70 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/leave/reject/:id
+router.patch("/reject/:id", verifyAuth, async (req, res) => {
+  try {
+    const leaveRequestId = parseInt(req.params.id);
+    const approverId = req.user.id;
+    const { remarks } = req.body;
+
+    // Find the pending workflow row
+    const { data: workflowRow, error: wfErr } = await supabase
+      .from("leave_approval_workflow")
+      .select("*")
+      .eq("leave_request_id", leaveRequestId)
+      .eq("approver_id", approverId)
+      .eq("status", "Pending")
+      .single();
+
+    if (wfErr || !workflowRow) {
+      return res.status(404).json({ error: "No pending workflow found for approver" });
+    }
+
+    // Update workflow status to Rejected
+    const { error: updateErr } = await supabase
+      .from("leave_approval_workflow")
+      .update({ status: "Rejected", approved_at: new Date(), remarks })
+      .eq("workflow_id", workflowRow.workflow_id);
+
+    if (updateErr) return res.status(500).json({ error: updateErr.message });
+
+    // Update main leave_request status to Rejected
+    await supabase
+      .from("leave_request")
+      .update({ status: "Rejected", approved_by: approverId, approved_at: new Date() })
+      .eq("leave_request_id", leaveRequestId);
+
+    // Log action
+    await logLeaveAction(leaveRequestId, "Rejected", "Pending", "Rejected", approverId, remarks);
+
+    res.json({ message: "Leave rejected successfully" });
+  } catch (err) {
+    console.error("PATCH /leave/reject error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/leave/:id/auditlog
+router.get("/:id/auditlog", verifyAuth, async (req, res) => {
+  try {
+    const leaveRequestId = parseInt(req.params.id);
+
+    const { data, error } = await supabase
+      .from("leave_request_auditlog")
+      .select("*")
+      .eq("leave_request_id", leaveRequestId)
+      .order("performed_at", { ascending: true });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json(data);
+  } catch (err) {
+    console.error("GET /leave/:id/auditlog error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
 export default router;
