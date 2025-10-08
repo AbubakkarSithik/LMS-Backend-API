@@ -2,7 +2,7 @@ import express from "express";
 import supabase from "../config/supabase.js";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import { buildApprovalWorkflow, logLeaveAction } from "../middleware/leaveHelpers.js";
-import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
+import { verifyAdminForOrg, verifyHRForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
@@ -117,15 +117,29 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
 
     // 5. Update leave_balance if fully approved
     if (leaveStatus === "Approved") {
-      const days =
-        (new Date(leaveReq.end_date) - new Date(leaveReq.start_date)) / (1000 * 60 * 60 * 24) + 1;
+        const days =
+            (new Date(leaveReq.end_date) - new Date(leaveReq.start_date)) /
+            (1000 * 60 * 60 * 24) +
+            1;
 
-      await supabase
-        .from("leave_balance")
-        .update({ total_used: supabase.raw("total_used + ?", [days]) })
-        .eq("employee_id", leaveReq.employee_id)
-        .eq("leave_type_id", leaveReq.leave_type_id);
-    }
+        // Fetch current balance
+        const { data: balance, error: balErr } = await supabase
+            .from("leave_balance")
+            .select("total_used")
+            .eq("employee_id", leaveReq.employee_id)
+            .eq("leave_type_id", leaveReq.leave_type_id)
+            .single();
+
+        if (balErr) throw balErr;
+        const newUsed = (balance?.total_used || 0) + days;
+        const { error: updErr } = await supabase
+            .from("leave_balance")
+            .update({ total_used: newUsed })
+            .eq("employee_id", leaveReq.employee_id)
+            .eq("leave_type_id", leaveReq.leave_type_id);
+
+        if (updErr) throw updErr;
+        }
 
     // 6. Log action
     await logLeaveAction(leaveRequestId, "Approved", "Pending", leaveStatus, approverId, remarks);
@@ -211,15 +225,16 @@ router.get("/requests", verifyAuth, async (req, res) => {
       .eq("id", userId)
       .single();
 
-    if (userErr || !user) return res.status(404).json({ error: "User not found" });
+    if (userErr || !user)
+      return res.status(404).json({ error: "User not found" });
 
     const orgId = user.organization_id;
-    const isAdmin = await verifyAdminForOrg(userId, orgId);
-
-    // Base leave query with joins
+    const isAdmin = !!(await verifyAdminForOrg(userId, orgId));
+    const isHR = !!(await verifyHRForOrg(userId, orgId));
     let leaveQuery = supabase
       .from("leave_request")
-      .select(`
+      .select(
+        `
         leave_request_id,
         start_date,
         end_date,
@@ -228,7 +243,7 @@ router.get("/requests", verifyAuth, async (req, res) => {
         applied_at,
         approved_at,
         approved_by,
-        app_user:id (
+        app_user:employee_id (
           id,
           first_name,
           last_name,
@@ -237,30 +252,49 @@ router.get("/requests", verifyAuth, async (req, res) => {
         leave_type:leave_type_id (
           leave_type_id,
           name
-        )
-      `)
+        )   `
+      )
       .order("applied_at", { ascending: false });
-
-    // Filter based on role
-    if (isAdmin) {
-      const { data: orgUsers } = await supabase
+    if (isAdmin || user.role_id === 1001) {
+      const { data: orgUsers, error: orgErr } = await supabase
         .from("app_user")
         .select("id")
         .eq("organization_id", orgId);
 
-      leaveQuery = leaveQuery.in(
-        "employee_id",
-        orgUsers.map((u) => u.id)
-      );
-    } else if (user.role_id === (1002 || 1003)) {
-      const { data: subordinates } = await supabase
+      if (orgErr) throw orgErr;
+
+      const userIds = orgUsers?.map((u) => u.id) || [];
+      if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
+    }
+
+    else if (isHR || user.role_id === 1002) {
+      const { data: orgUsers, error: orgErr } = await supabase
+        .from("app_user")
+        .select("id")
+        .eq("organization_id", orgId);
+
+      if (orgErr) throw orgErr;
+
+      const userIds = orgUsers?.map((u) => u.id) || [];
+      if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
+    }
+
+    else if (user.role_id === 1003) {
+      const { data: subordinates, error: subErr } = await supabase
         .from("employee_manager")
         .select("employee_id")
         .eq("manager_id", userId);
 
-      const empIds = subordinates.map((s) => s.employee_id);
-      leaveQuery = leaveQuery.in("employee_id", empIds);
-    } else {
+      if (subErr) throw subErr;
+
+      const empIds = subordinates?.map((s) => s.employee_id) || [];
+      empIds.push(userId);
+
+      if (empIds.length > 0) leaveQuery = leaveQuery.in("employee_id", empIds);
+      else leaveQuery = leaveQuery.eq("employee_id", userId);
+    }
+
+    else if (user.role_id === 1004) {
       leaveQuery = leaveQuery.eq("employee_id", userId);
     }
 
