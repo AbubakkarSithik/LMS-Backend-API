@@ -2,6 +2,7 @@ import express from "express";
 import supabase from "../config/supabase.js";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import { buildApprovalWorkflow, logLeaveAction } from "../middleware/leaveHelpers.js";
+import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
@@ -200,6 +201,77 @@ router.get("/:id/auditlog", verifyAuth, async (req, res) => {
   }
 });
 
+// GET /api/leave/requests
+router.get("/requests", verifyAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: user, error: userErr } = await supabase
+      .from("app_user")
+      .select("organization_id, role_id")
+      .eq("id", userId)
+      .single();
 
+    if (userErr || !user) return res.status(404).json({ error: "User not found" });
+
+    const orgId = user.organization_id;
+    const isAdmin = await verifyAdminForOrg(userId, orgId);
+
+    // Base leave query with joins
+    let leaveQuery = supabase
+      .from("leave_request")
+      .select(`
+        leave_request_id,
+        start_date,
+        end_date,
+        reason,
+        status,
+        applied_at,
+        approved_at,
+        approved_by,
+        app_user:id (
+          id,
+          first_name,
+          last_name,
+          email
+        ),
+        leave_type:leave_type_id (
+          leave_type_id,
+          name
+        )
+      `)
+      .order("applied_at", { ascending: false });
+
+    // Filter based on role
+    if (isAdmin) {
+      const { data: orgUsers } = await supabase
+        .from("app_user")
+        .select("id")
+        .eq("organization_id", orgId);
+
+      leaveQuery = leaveQuery.in(
+        "employee_id",
+        orgUsers.map((u) => u.id)
+      );
+    } else if (user.role_id === (1002 || 1003)) {
+      const { data: subordinates } = await supabase
+        .from("employee_manager")
+        .select("employee_id")
+        .eq("manager_id", userId);
+
+      const empIds = subordinates.map((s) => s.employee_id);
+      leaveQuery = leaveQuery.in("employee_id", empIds);
+    } else {
+      leaveQuery = leaveQuery.eq("employee_id", userId);
+    }
+
+    const { data: leaves, error: leaveErr } = await leaveQuery;
+    if (leaveErr) return res.status(500).json({ error: leaveErr.message });
+
+    res.json(leaves);
+  } catch (err) {
+    console.error("GET /leave/requests error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default router;
