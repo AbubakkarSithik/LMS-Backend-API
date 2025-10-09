@@ -23,6 +23,16 @@ export async function buildApprovalWorkflow(employeeId, leaveRequestId) {
       if (mgrHr?.hr_id) {
         hrId = mgrHr.hr_id;
       }
+    }else{
+        const { data: mgrHR } = await supabase
+        .from("manager_hr")
+        .select("hr_id")
+        .eq("manager_id", employeeId)
+        .single();
+
+        if (mgrHR?.hr_id) {
+          hrId = mgrHR.hr_id;
+        }
     }
 
     const workflowEntries = [];

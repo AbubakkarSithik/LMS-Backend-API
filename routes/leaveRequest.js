@@ -158,7 +158,7 @@ router.patch("/reject/:id", verifyAuth, async (req, res) => {
     const approverId = req.user.id;
     const { remarks } = req.body;
 
-    // Find the pending workflow row
+    // 1. Find the pending workflow row for this approver
     const { data: workflowRow, error: wfErr } = await supabase
       .from("leave_approval_workflow")
       .select("*")
@@ -167,28 +167,67 @@ router.patch("/reject/:id", verifyAuth, async (req, res) => {
       .eq("status", "Pending")
       .single();
 
-    if (wfErr || !workflowRow) {
+    if (wfErr) {
+      console.error("Error fetching workflow row:", wfErr);
+      return res.status(500).json({ error: wfErr.message });
+    }
+    if (!workflowRow) {
       return res.status(404).json({ error: "No pending workflow found for approver" });
     }
 
-    // Update workflow status to Rejected
-    const { error: updateErr } = await supabase
+    // 2. Update the workflow row status = "Rejected"
+    const { data: updatedWf, error: updateErr } = await supabase
       .from("leave_approval_workflow")
-      .update({ status: "Rejected", approved_at: new Date(), remarks })
-      .eq("workflow_id", workflowRow.workflow_id);
+      .update({
+        status: "Rejected",
+        approved_at: new Date().toISOString(),
+        remarks: remarks || null,
+      })
+      .eq("workflow_id", workflowRow.workflow_id)
+      .select(); 
 
-    if (updateErr) return res.status(500).json({ error: updateErr.message });
+    if (updateErr) {
+      console.error("Error updating workflow row:", updateErr);
+      return res.status(500).json({ error: updateErr.message });
+    }
+    if (!updatedWf || updatedWf.length === 0) {
+      console.warn("No rows updated in leave_approval_workflow for reject");
+    }
 
-    // Update main leave_request status to Rejected
-    await supabase
+    // 3. Update the main leave_request status to "Rejected"
+    const { data: updatedLeave, error: leaveUpdateErr } = await supabase
       .from("leave_request")
-      .update({ status: "Rejected", approved_by: approverId, approved_at: new Date() })
-      .eq("leave_request_id", leaveRequestId);
+      .update({
+        status: "Rejected",
+        approved_by: approverId,
+        approved_at: new Date().toISOString(),
+      })
+      .eq("leave_request_id", leaveRequestId)
+      .select(); 
 
-    // Log action
-    await logLeaveAction(leaveRequestId, "Rejected", "Pending", "Rejected", approverId, remarks);
+    if (leaveUpdateErr) {
+      console.error("Error updating leave_request for reject:", leaveUpdateErr);
+      return res.status(500).json({ error: leaveUpdateErr.message });
+    }
+    if (!updatedLeave || updatedLeave.length === 0) {
+      console.warn("No rows updated in leave_request for reject");
+    }
 
-    res.json({ message: "Leave rejected successfully" });
+    // 4. Log action
+    await logLeaveAction(
+      leaveRequestId,
+      "Rejected",
+      "Pending",    
+      "Rejected",
+      approverId,
+      remarks || null
+    );
+
+    return res.json({
+      message: "Leave rejected successfully",
+      workflow: updatedWf[0],
+      leave_request: updatedLeave[0],
+    });
   } catch (err) {
     console.error("PATCH /leave/reject error:", err);
     res.status(500).json({ error: "Server error" });
@@ -202,7 +241,11 @@ router.get("/:id/auditlog", verifyAuth, async (req, res) => {
 
     const { data, error } = await supabase
       .from("leave_request_auditlog")
-      .select("*")
+      .select(`*,
+          app_user:performed_by(id,
+            first_name,
+            last_name)
+            `)
       .eq("leave_request_id", leaveRequestId)
       .order("performed_at", { ascending: true });
 
@@ -243,6 +286,7 @@ router.get("/requests", verifyAuth, async (req, res) => {
         applied_at,
         approved_at,
         approved_by,
+        employee_id,
         app_user:employee_id (
           id,
           first_name,
@@ -252,9 +296,11 @@ router.get("/requests", verifyAuth, async (req, res) => {
         leave_type:leave_type_id (
           leave_type_id,
           name
-        )   `
+        )
+        `
       )
       .order("applied_at", { ascending: false });
+
     if (isAdmin || user.role_id === 1001) {
       const { data: orgUsers, error: orgErr } = await supabase
         .from("app_user")
@@ -262,36 +308,40 @@ router.get("/requests", verifyAuth, async (req, res) => {
         .eq("organization_id", orgId);
 
       if (orgErr) throw orgErr;
-
       const userIds = orgUsers?.map((u) => u.id) || [];
       if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
     }
 
     else if (isHR || user.role_id === 1002) {
-      const { data: orgUsers, error: orgErr } = await supabase
-        .from("app_user")
-        .select("id")
-        .eq("organization_id", orgId);
+      const { data: pendingWorkflows, error: wfErr } = await supabase
+        .from("leave_approval_workflow")
+        .select("leave_request_id")
+        .eq("approver_id", userId)
+        .eq("status", "Pending");
 
-      if (orgErr) throw orgErr;
+      if (wfErr) throw wfErr;
 
-      const userIds = orgUsers?.map((u) => u.id) || [];
-      if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
+      const pendingLeaveIds = pendingWorkflows?.map((w) => w.leave_request_id) || [];
+      if (pendingLeaveIds.length > 0)
+        leaveQuery = leaveQuery.in("leave_request_id", pendingLeaveIds);
+      else
+        return res.json([]);
     }
 
     else if (user.role_id === 1003) {
-      const { data: subordinates, error: subErr } = await supabase
-        .from("employee_manager")
-        .select("employee_id")
-        .eq("manager_id", userId);
+      const { data: pendingWorkflows, error: wfErr } = await supabase
+        .from("leave_approval_workflow")
+        .select("leave_request_id")
+        .eq("approver_id", userId)
+        .eq("status", "Pending");
 
-      if (subErr) throw subErr;
+      if (wfErr) throw wfErr;
 
-      const empIds = subordinates?.map((s) => s.employee_id) || [];
-      empIds.push(userId);
-
-      if (empIds.length > 0) leaveQuery = leaveQuery.in("employee_id", empIds);
-      else leaveQuery = leaveQuery.eq("employee_id", userId);
+      const pendingLeaveIds = pendingWorkflows?.map((w) => w.leave_request_id) || [];
+      if (pendingLeaveIds.length > 0)
+        leaveQuery = leaveQuery.in("leave_request_id", pendingLeaveIds);
+      else
+        return res.json([]);
     }
 
     else if (user.role_id === 1004) {
