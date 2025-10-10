@@ -358,4 +358,74 @@ router.get("/requests", verifyAuth, async (req, res) => {
   }
 });
 
+
+router.get("/history", verifyAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1️⃣ Fetch user info
+    const { data: user, error: userErr } = await supabase
+      .from("app_user")
+      .select("organization_id, role_id")
+      .eq("id", userId)
+      .single();
+
+    if (userErr || !user)
+      return res.status(404).json({ error: "User not found" });
+
+    const orgId = user.organization_id;
+    const isAdmin = !!(await verifyAdminForOrg(userId, orgId));
+
+    // 2️⃣ Base query
+    let leaveQuery = supabase
+      .from("leave_request")
+      .select(
+        `
+        leave_request_id,
+        start_date,
+        end_date,
+        reason,
+        status,
+        applied_at,
+        approved_at,
+        approved_by,
+        employee_id,
+        app_user:employee_id (
+          id,
+          first_name,
+          last_name,
+          email
+        ),
+        leave_type:leave_type_id (
+          leave_type_id,
+          name
+        )
+        `
+      )
+      .order("applied_at", { ascending: false });
+
+    if (isAdmin || user.role_id === 1001) {
+      const { data: orgUsers, error: orgErr } = await supabase
+        .from("app_user")
+        .select("id")
+        .eq("organization_id", orgId);
+
+      if (orgErr) throw orgErr;
+      const userIds = orgUsers?.map((u) => u.id) || [];
+      if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
+    } else {
+      leaveQuery = leaveQuery.eq("employee_id", userId);
+    }
+
+    const { data: leaves, error: leaveErr } = await leaveQuery;
+    if (leaveErr) return res.status(500).json({ error: leaveErr.message });
+
+    res.json(leaves);
+  } catch (err) {
+    console.error("GET /leave/history error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
 export default router;
