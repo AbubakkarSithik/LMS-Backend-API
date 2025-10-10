@@ -2,53 +2,47 @@ import supabase from "../config/supabase.js";
 
 export async function buildApprovalWorkflow(employeeId, leaveRequestId) {
   try {
-    let managerId = null;
-    let hrId = null;
+    let level = 1;
+    const workflowEntries = [];
+    let currentEmployee = employeeId;
 
-    const { data: empMgr } = await supabase
-      .from("employee_manager")
-      .select("manager_id")
-      .eq("employee_id", employeeId)
-      .single();
+    while (true) {
+      // Step 1: Try to find a manager
+      const { data: mgrRel } = await supabase
+        .from("employee_manager")
+        .select("manager_id")
+        .eq("employee_id", currentEmployee)
+        .single();
 
-    if (empMgr?.manager_id) {
-      managerId = empMgr.manager_id;
+      if (!mgrRel?.manager_id) break; // no manager, stop
+      const managerId = mgrRel.manager_id;
 
-      const { data: mgrHr } = await supabase
+      // Add manager as approver
+      workflowEntries.push({
+        leave_request_id: leaveRequestId,
+        approver_id: managerId,
+        level,
+      });
+
+      // Step 2: Check if that manager has an HR mapped
+      const { data: hrRel } = await supabase
         .from("manager_hr")
         .select("hr_id")
         .eq("manager_id", managerId)
         .single();
 
-      if (mgrHr?.hr_id) {
-        hrId = mgrHr.hr_id;
+      if (hrRel?.hr_id) {
+        level++;
+        workflowEntries.push({
+          leave_request_id: leaveRequestId,
+          approver_id: hrRel.hr_id,
+          level,
+        });
       }
-    }else{
-        const { data: mgrHR } = await supabase
-        .from("manager_hr")
-        .select("hr_id")
-        .eq("manager_id", employeeId)
-        .single();
 
-        if (mgrHR?.hr_id) {
-          hrId = mgrHR.hr_id;
-        }
-    }
-
-    const workflowEntries = [];
-    if (managerId) {
-      workflowEntries.push({
-        leave_request_id: leaveRequestId,
-        approver_id: managerId,
-        level: 1,
-      });
-    }
-    if (hrId) {
-      workflowEntries.push({
-        leave_request_id: leaveRequestId,
-        approver_id: hrId,
-        level: 2,
-      });
+      // Step 3: For next iteration (in case manager has another manager)
+      currentEmployee = managerId;
+      level++;
     }
 
     if (workflowEntries.length > 0) {
