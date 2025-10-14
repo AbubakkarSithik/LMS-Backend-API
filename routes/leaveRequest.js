@@ -2,7 +2,7 @@ import express from "express";
 import supabase from "../config/supabase.js";
 import { verifyAuth } from "../middleware/verifyAuth.js";
 import { buildApprovalWorkflow, logLeaveAction } from "../middleware/leaveHelpers.js";
-import { verifyAdminForOrg, verifyHRForOrg } from "../middleware/verifyAdmin.js";
+import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
@@ -29,6 +29,27 @@ router.post("/request", verifyAuth, async (req, res) => {
       return res.status(403).json({ error: "Admin cannot request leave" });
     }
 
+    const days = (new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24) + 1;
+
+    const { data: balance, error: balanceErr } = await supabase
+      .from("leave_balance")
+      .select("total_used")
+      .eq("employee_id", userId)
+      .eq("leave_type_id", leave_type_id)
+      .single();
+
+    if (balanceErr) throw balanceErr;
+
+    const newUsed = (balance?.total_used || 0) + days;
+
+    const { error: updateBalanceErr } = await supabase
+      .from("leave_balance")
+      .update({ total_used: newUsed })
+      .eq("employee_id", userId)
+      .eq("leave_type_id", leave_type_id);
+
+    if (updateBalanceErr) throw updateBalanceErr;
+
     const { data: leaveReq, error: leaveErr } = await supabase
       .from("leave_request")
       .insert([
@@ -38,16 +59,13 @@ router.post("/request", verifyAuth, async (req, res) => {
           start_date,
           end_date,
           reason,
+          status: "Pending",
         },
       ])
       .select()
       .single();
 
-    if (leaveErr) {
-      console.error("leave_request insert error:", leaveErr);
-      return res.status(500).json({ error: leaveErr.message });
-    }
-
+    if (leaveErr) throw leaveErr;
     const workflow = await buildApprovalWorkflow(userId, leaveReq.leave_request_id);
 
     await logLeaveAction(
@@ -76,7 +94,6 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
     const approverId = req.user.id;
     const { remarks } = req.body;
 
-    //Find the current approver's workflow row (Pending)
     const { data: currentLevel, error: currentErr } = await supabase
       .from("leave_approval_workflow")
       .select("*")
@@ -88,7 +105,6 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
     if (currentErr || !currentLevel)
       return res.status(404).json({ error: "No pending workflow found for approver" });
 
-    // Approve current level
     const { error: updateErr } = await supabase
       .from("leave_approval_workflow")
       .update({
@@ -100,7 +116,6 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
 
     if (updateErr) throw updateErr;
 
-    // Activate next level (if exists)
     const { data: nextLevel } = await supabase
       .from("leave_approval_workflow")
       .select("*")
@@ -109,14 +124,12 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
       .single();
 
     if (nextLevel) {
-      // If there’s another approver, activate them
       await supabase
         .from("leave_approval_workflow")
         .update({ status: "Pending" })
         .eq("workflow_id", nextLevel.workflow_id);
     }
 
-    //Check if all levels approved
     const { data: pendingLevels } = await supabase
       .from("leave_approval_workflow")
       .select("status")
@@ -124,46 +137,19 @@ router.patch("/approve/:id", verifyAuth, async (req, res) => {
       .in("status", ["Pending", "Not Started"]);
 
     let leaveStatus = "Approved";
-    if (nextLevel) leaveStatus = "Under Review";
-    else if (pendingLevels?.length > 0) leaveStatus = "Under Review";
+    if (nextLevel || (pendingLevels?.length ?? 0) > 0) leaveStatus = "Under Review";
 
-    // Update main leave_request status
-    const { data: leaveReq, error: leaveUpdateErr } = await supabase
+    const { error: leaveUpdateErr } = await supabase
       .from("leave_request")
       .update({
         status: leaveStatus,
         approved_by: approverId,
         approved_at: new Date().toISOString(),
       })
-      .eq("leave_request_id", leaveRequestId)
-      .select()
-      .single();
+      .eq("leave_request_id", leaveRequestId);
 
     if (leaveUpdateErr) throw leaveUpdateErr;
 
-    // If final approval, update leave_balance
-    if (leaveStatus === "Approved") {
-      const days =
-        (new Date(leaveReq.end_date) - new Date(leaveReq.start_date)) /
-          (1000 * 60 * 60 * 24) +
-        1;
-
-      const { data: balance } = await supabase
-        .from("leave_balance")
-        .select("total_used")
-        .eq("employee_id", leaveReq.employee_id)
-        .eq("leave_type_id", leaveReq.leave_type_id)
-        .single();
-
-      const newUsed = (balance?.total_used || 0) + days;
-      await supabase
-        .from("leave_balance")
-        .update({ total_used: newUsed })
-        .eq("employee_id", leaveReq.employee_id)
-        .eq("leave_type_id", leaveReq.leave_type_id);
-    }
-
-    // Log approval
     await logLeaveAction(
       leaveRequestId,
       "Approved",
@@ -187,7 +173,6 @@ router.patch("/reject/:id", verifyAuth, async (req, res) => {
     const approverId = req.user.id;
     const { remarks } = req.body;
 
-    // Find the pending workflow for current approver
     const { data: currentLevel, error: wfErr } = await supabase
       .from("leave_approval_workflow")
       .select("*")
@@ -199,7 +184,6 @@ router.patch("/reject/:id", verifyAuth, async (req, res) => {
     if (wfErr || !currentLevel)
       return res.status(404).json({ error: "No pending workflow found for approver" });
 
-    // Reject current workflow row
     const { error: rejectErr } = await supabase
       .from("leave_approval_workflow")
       .update({
@@ -211,28 +195,45 @@ router.patch("/reject/:id", verifyAuth, async (req, res) => {
 
     if (rejectErr) throw rejectErr;
 
-    // Cancel all next levels
     await supabase
       .from("leave_approval_workflow")
       .update({ status: "Cancelled" })
       .eq("leave_request_id", leaveRequestId)
       .gt("level", currentLevel.level);
 
-    //Update main leave_request
-    const { data: updatedLeave, error: leaveUpdateErr } = await supabase
+    const { data: leaveReq } = await supabase
+      .from("leave_request")
+      .select("employee_id, leave_type_id, start_date, end_date")
+      .eq("leave_request_id", leaveRequestId)
+      .single();
+
+    if (leaveReq) {
+      const days = (new Date(leaveReq.end_date) - new Date(leaveReq.start_date)) / (1000 * 60 * 60 * 24) + 1;
+
+      const { data: balance } = await supabase
+        .from("leave_balance")
+        .select("total_used")
+        .eq("employee_id", leaveReq.employee_id)
+        .eq("leave_type_id", leaveReq.leave_type_id)
+        .single();
+
+      const newUsed = Math.max(0, (balance?.total_used || 0) - days);
+      await supabase
+        .from("leave_balance")
+        .update({ total_used: newUsed })
+        .eq("employee_id", leaveReq.employee_id)
+        .eq("leave_type_id", leaveReq.leave_type_id);
+    }
+
+    await supabase
       .from("leave_request")
       .update({
         status: "Rejected",
         approved_by: approverId,
         approved_at: new Date().toISOString(),
       })
-      .eq("leave_request_id", leaveRequestId)
-      .select()
-      .single();
+      .eq("leave_request_id", leaveRequestId);
 
-    if (leaveUpdateErr) throw leaveUpdateErr;
-
-    //Log rejection
     await logLeaveAction(
       leaveRequestId,
       "Rejected",
