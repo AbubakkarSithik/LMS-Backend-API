@@ -9,12 +9,17 @@ import orgRoutes from "./routes/orgRoutes.js";
 import leaveRoutes from "./routes/leave.js"
 import employeeRelationsRoutes from "./routes/employeeRelations.js";
 import leaveRequestRoutes from "./routes/leaveRequest.js"
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
 app.use(express.json());
+const devFrontend = "http://localhost:5173";
+const prodFrontend = "https://lms-frontend-ashen.vercel.app";
+const allowedOrigin = process.env.NODE_ENV === "production" ? prodFrontend : devFrontend;
 app.use(
   cors({
-    origin: "http://localhost:5173", 
+    origin: allowedOrigin,
     credentials: true,
   })
 );
