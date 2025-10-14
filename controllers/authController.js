@@ -12,12 +12,14 @@ function setAuthCookies(res, session) {
   res.cookie("sb_access_token", session.access_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
     maxAge: 1000 * 60 * 60 * 24,
   });
 
   res.cookie("sb_refresh_token", session.refresh_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
 }
