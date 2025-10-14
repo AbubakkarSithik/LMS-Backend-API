@@ -17,6 +17,7 @@ import {
 
 import { buildApprovalWorkflow, logLeaveAction } from "../middleware/leaveHelpers.js";
 import { verifyAdminForOrg } from "../middleware/verifyAdmin.js";
+import supabase from "../config/supabase.js";
 
 // POST /leave/request
 export const createLeave = async (req, res) => {
