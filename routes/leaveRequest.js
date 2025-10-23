@@ -7,6 +7,7 @@ import {
   getLeaveAuditLog,
   getLeaveRequests,
   getLeaveHistory,
+  getAllUsersLeaveRequests,
 } from "../controllers/leaveRequestController.js";
 
 const router = express.Router();
@@ -17,5 +18,6 @@ router.patch("/reject/:id", verifyAuth, rejectLeave);
 router.get("/:id/auditlog", verifyAuth, getLeaveAuditLog);
 router.get("/requests", verifyAuth, getLeaveRequests);
 router.get("/history", verifyAuth, getLeaveHistory);
+router.get("/all-user-requests", verifyAuth, getAllUsersLeaveRequests);
 
 export default router;

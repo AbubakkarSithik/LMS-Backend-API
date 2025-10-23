@@ -286,3 +286,31 @@ export const getLeaveHistory = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
+export const getAllUsersLeaveRequests = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: user } = await getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const orgId = user.organization_id;
+    let leaveQuery = supabase
+      .from("leave_request")
+      .select(
+        `leave_request_id,start_date,end_date,reason,status,applied_at,approved_at,approved_by,employee_id,
+         app_user:employee_id(id,first_name,last_name,email),
+         leave_type:leave_type_id(leave_type_id,name)`
+      )
+      .order("applied_at", { ascending: false });
+      const { data: orgUsers } = await getOrgUsers(orgId);
+      const userIds = orgUsers?.map((u) => u.id) || [];
+      if (userIds.length > 0) leaveQuery = leaveQuery.in("employee_id", userIds);
+    
+    const { data: leaves, error: leaveErr } = await leaveQuery;
+    if (leaveErr) return res.status(500).json({ error: leaveErr.message });
+    res.json(leaves);
+  } catch (err) {
+    console.error("getLeaveHistory of all error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
